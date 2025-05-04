@@ -1,12 +1,11 @@
 #!/bin/bash
 # deploy.sh: Package Lambdas (with dependencies) and deploy with Terraform.
-# Usage examples:
+# Usage:
 #   ./deploy.sh --telegram-id 123456789
 #   ./deploy.sh --destroy
 
 set -e
 
-# Initialize variables
 DESTROY=0
 TELEGRAM_ID=""
 
@@ -26,63 +25,58 @@ while [[ "$#" -gt 0 ]]; do
             fi
             ;;
         *)
-            echo "Unknown parameter passed: $1"
+            echo "Unknown parameter: $1"
             exit 1
             ;;
     esac
     shift
 done
 
-# If the --destroy flag was passed, destroy resources and exit.
+# Destroy resources if flag is set
 if [ $DESTROY -eq 1 ]; then
-    echo "Destroying resources with Terraform..."
+    echo "Destroying infrastructure..."
     cd terraform
     TELEGRAM_ID=1
     terraform destroy -var "telegram_id=${TELEGRAM_ID}" -auto-approve
     cd ..
-    echo "Resources destroyed."
+    echo "Destroyed."
     exit 0
 fi
 
-
-
 echo "Packaging Lambdas..."
 
-# Remove any existing build directory, then re-create it as blank.
 rm -rf build
 mkdir -p build
 
-# Function to package a lambda given its folder name.
+# Docker-based packaging
 package_lambda() {
     local lambda_folder=$1
-    echo "Packaging ${lambda_folder} Lambda..."
-    cd "lambdas/${lambda_folder}"
-    
-    # Remove previous package directory if it exists, then create a new one.
-    rm -rf package
-    mkdir package
+    echo "Packaging $lambda_folder with Docker..."
 
-    # Install dependencies into the package directory if requirements.txt exists.
-    if [ -f requirements.txt ]; then
-        pip install -r requirements.txt -t package
-    fi
+    local full_path
+    full_path=$(realpath "$lambda_folder")
 
-    # Copy all Python source files into the package directory.
-    cp *.py package/
+    docker run --rm \
+        -v "$full_path":/app \
+        -v "$(pwd)/build":/build \
+        -w /app \
+        python:3.12-slim bash -c "
+            apt-get update && apt-get install -y zip > /dev/null && \
+            rm -rf /app/package && mkdir /app/package && \
+            if [ -f requirements.txt ]; then pip install -r requirements.txt -t /app/package; fi && \
+            cp *.py /app/package/ && \
+            cd /app/package && zip -r /build/${lambda_folder##*/}.zip . > /dev/null
+        "
 
-    # Change into the package directory and zip its contents (not the folder itself).
-    cd package
-    zip -r ../../../build/"${lambda_folder}.zip" .
-    cd ../../../
+    echo "✓ Done: build/${lambda_folder##*/}.zip"
 }
 
-# Package each lambda
-# package_lambda "email_fetcher"
-# package_lambda "email_classifier"
+# Add more lambdas here as needed
+package_lambda "src/lambda/sanitizer"
 
 echo "Deploying with Terraform..."
-cd terraform
 
+cd terraform
 terraform init
 
 if [ -n "$TELEGRAM_ID" ]; then
@@ -95,4 +89,4 @@ fi
 
 rm tfplan.out
 cd ..
-echo "Deployment complete."
+echo "✅ Deployment complete."

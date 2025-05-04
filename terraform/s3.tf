@@ -13,3 +13,8 @@ resource "aws_s3_bucket_notification" "email_event_to_sqs" {
 
   depends_on = [aws_sqs_queue_policy.allow_s3_publish]
 }
+
+resource "aws_s3_bucket" "sanitized_storage" {
+  bucket        = "${var.app_name}-storage-sanitized"
+  force_destroy = true
+}
