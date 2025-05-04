@@ -1,4 +1,4 @@
-data "aws_s3_bucket" "needl-bucket" {
+data "aws_s3_bucket" "needl-bucket-raw" {
   bucket = local.bucket
 }
 

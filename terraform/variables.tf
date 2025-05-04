@@ -17,5 +17,5 @@ variable "telegram_id" {
 }
 
 locals {
-  bucket = "${var.app_name}-storage"
+  bucket = "${var.app_name}-storage-raw"
 }
