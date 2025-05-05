@@ -7,16 +7,23 @@ from bs4 import BeautifulSoup
 from email import policy
 from email.parser import BytesParser
 from email.header import decode_header, make_header
+from email.utils import parseaddr
+from datetime import datetime
 
 # Set up logger
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
-# Initialize S3 client
+# Clients
 s3 = boto3.client("s3")
+dynamodb = boto3.resource("dynamodb")
 
-# Destination bucket is passed via environment variable
+# Environment vars
 OUTPUT_S3_BUCKET = os.environ["OUTPUT_S3_BUCKET"]
+USER_EMAILS_TABLE = os.environ["USER_EMAILS_TABLE"]
+
+# DynamoDB table object
+user_emails_table = dynamodb.Table(USER_EMAILS_TABLE)
 
 def clean_text(text: str) -> str:
     """Strip HTML tags and normalize whitespace in email content."""
@@ -61,31 +68,39 @@ def lambda_handler(event, context):
             response = s3.get_object(Bucket=bucket, Key=key)
             raw_email = response["Body"].read()
 
-            # Parse the email using Python's email module
+            # Parse the email
             msg = BytesParser(policy=policy.default).parsebytes(raw_email)
-            sender = msg.get("From", "unknown")
+            from_name, from_email = parseaddr(msg.get("From", "unknown"))
             subject = decode_mime_words(msg.get("Subject", ""))
             body_text = extract_body(msg)
 
-            # Build the output JSON
-            cleaned = {
-                "from": sender,
-                "subject": subject,
-                "body": body_text
-            }
-
-            # Step 6: Write to cleaned bucket with safe key
+            # Write cleaned body to S3
             base_key = os.path.basename(key).split(".")[0]
-            output_key = f"{base_key}.json"
+            output_key = f"{base_key}.txt"
+            s3_path = f"s3://{OUTPUT_S3_BUCKET}/{output_key}"
 
             s3.put_object(
                 Bucket=OUTPUT_S3_BUCKET,
                 Key=output_key,
-                Body=json.dumps(cleaned, indent=2),
+                Body=body_text,
                 ContentType="application/json"
             )
 
-            logger.info("Wrote cleaned email to s3://%s/%s", OUTPUT_S3_BUCKET, output_key)
+            logger.info("Wrote cleaned email to %s", s3_path)
 
-        except Exception as e:
+            # Insert metadata into user_emails table
+            now = datetime.utcnow().isoformat(timespec="milliseconds")
+            user_emails_table.put_item(
+                Item={
+                    "user_email": from_email,
+                    "display_name": from_name,
+                    "timestamp": now,
+                    "s3_path": s3_path,
+                    "subject": subject
+                }
+            )
+
+            logger.info("Inserted record into user_emails for %s", from_email)
+
+        except Exception:
             logger.exception("Failed to process record")

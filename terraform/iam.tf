@@ -72,7 +72,14 @@ resource "aws_iam_policy" "lambda_policy" {
           "sqs:GetQueueAttributes"
         ],
         Resource = aws_sqs_queue.ses_email_queue.arn
-      }
+      },
+      {
+        Effect = "Allow",
+        Action = [
+          "dynamodb:PutItem"
+        ],
+        Resource = aws_dynamodb_table.user_emails.arn
+      },
     ]
   })
 }

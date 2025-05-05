@@ -1,0 +1,39 @@
+resource "aws_dynamodb_table" "users" {
+  name         = "users"
+  billing_mode = "PAY_PER_REQUEST"
+  hash_key     = "email"
+
+  attribute {
+    name = "email"
+    type = "S"
+  }
+
+  tags = {
+    Name        = "users"
+    Environment = "prod"
+    App         = "needl"
+  }
+}
+
+resource "aws_dynamodb_table" "user_emails" {
+  name         = "user_emails"
+  billing_mode = "PAY_PER_REQUEST"
+  hash_key     = "user_email"
+  range_key    = "timestamp"
+
+  attribute {
+    name = "user_email"
+    type = "S"
+  }
+
+  attribute {
+    name = "timestamp"
+    type = "S"
+  }
+
+  tags = {
+    Name        = "user_emails"
+    Environment = "prod"
+    App         = "needl"
+  }
+}
