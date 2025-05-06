@@ -76,13 +76,20 @@ def lambda_handler(event, context):
 
             # Write cleaned body to S3
             base_key = os.path.basename(key).split(".")[0]
-            output_key = f"{base_key}.txt"
+            output_key = f"{base_key}.json"
             s3_path = f"s3://{OUTPUT_S3_BUCKET}/{output_key}"
+            
+            email_json = {
+                "from": from_email,
+                "display_name": from_name,
+                "subject": subject,
+                "body": body_text,
+            }
 
             s3.put_object(
                 Bucket=OUTPUT_S3_BUCKET,
                 Key=output_key,
-                Body=body_text,
+                Body=json.dumps(email_json, indent=2),
                 ContentType="application/json"
             )
 

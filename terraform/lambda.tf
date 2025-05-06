@@ -10,7 +10,7 @@ resource "aws_lambda_function" "needl_email_sanitizer" {
 
   environment {
     variables = {
-      OUTPUT_S3_BUCKET  = aws_s3_bucket.sanitized_storage.bucket
+      OUTPUT_S3_BUCKET  = aws_s3_bucket.s3_bucket_sanitized.bucket
       USER_EMAILS_TABLE = aws_dynamodb_table.user_emails.name
     }
   }

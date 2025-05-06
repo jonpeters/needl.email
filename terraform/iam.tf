@@ -62,7 +62,7 @@ resource "aws_iam_policy" "lambda_policy" {
         Action = [
           "s3:PutObject"
         ],
-        Resource = "arn:aws:s3:::${aws_s3_bucket.sanitized_storage.bucket}/*"
+        Resource = "arn:aws:s3:::${aws_s3_bucket.s3_bucket_sanitized.bucket}/*"
       },
       {
         Effect = "Allow",
@@ -87,4 +87,26 @@ resource "aws_iam_policy" "lambda_policy" {
 resource "aws_iam_role_policy_attachment" "lambda_attach" {
   role       = aws_iam_role.needl_email_lambda_sanitizer_exec_role.name
   policy_arn = aws_iam_policy.lambda_policy.arn
+}
+
+# allow sanitized s3 bucket to publish to sqs
+resource "aws_sqs_queue_policy" "allow_s3_sanitized_publish" {
+  queue_url = aws_sqs_queue.sanitized_queue.id
+
+  policy = jsonencode({
+    Version = "2012-10-17",
+    Statement = [
+      {
+        Effect    = "Allow",
+        Principal = { Service = "s3.amazonaws.com" },
+        Action    = "sqs:SendMessage",
+        Resource  = aws_sqs_queue.sanitized_queue.arn,
+        Condition = {
+          ArnLike = {
+            "aws:SourceArn" = aws_s3_bucket.s3_bucket_sanitized.arn
+          }
+        }
+      }
+    ]
+  })
 }
