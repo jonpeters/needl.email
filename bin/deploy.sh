@@ -51,24 +51,31 @@ mkdir -p build
 # Docker-based packaging
 package_lambda() {
     local lambda_folder=$1
-    echo "Packaging $lambda_folder with Docker..."
+    local lambda_name="${lambda_folder##*/}"
 
-    local full_path
-    full_path=$(realpath "$lambda_folder")
+    echo "Packaging $lambda_name..."
 
+    # Copy the lambda's requirements.txt into bin/ as temp input for Dockerfile
+    cp "${lambda_folder}/requirements.txt" bin/requirements.txt
+
+    # Build the image using bin/ as context
+    docker build \
+        -t "lambda-package-${lambda_name}" \
+        -f bin/Dockerfile \
+        bin
+
+    # Run the built image to zip the contents
     docker run --rm \
-        -v "$full_path":/app \
         -v "$(pwd)/build":/build \
-        -w /app \
-        python:3.12-slim bash -c "
-            apt-get update && apt-get install -y zip > /dev/null && \
-            rm -rf /app/package && mkdir /app/package && \
-            if [ -f requirements.txt ]; then pip install -r requirements.txt -t /app/package; fi && \
-            cp *.py /app/package/ && \
-            cd /app/package && zip -r /build/${lambda_folder##*/}.zip . > /dev/null
-        "
+        -v "$(realpath ${lambda_folder})":/src \
+        -w /app/package \
+        "lambda-package-${lambda_name}" \
+        bash -c "cp /src/*.py . && zip -r /build/${lambda_name}.zip . > /dev/null"
 
-    echo "✓ Done: build/${lambda_folder##*/}.zip"
+    # Clean up temp copied requirements.txt
+    rm bin/requirements.txt
+
+    echo "✓ Done: build/${lambda_name}.zip"
 }
 
 # Add more lambdas here as needed
