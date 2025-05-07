@@ -37,6 +37,9 @@ resource "aws_lambda_function" "needl_email_classifier" {
     variables = {
       OUTPUT_S3_BUCKET  = aws_s3_bucket.s3_bucket_sanitized.bucket
       USER_EMAILS_TABLE = aws_dynamodb_table.user_emails.name
+      BEDROCK_MODEL_ID  = local.bedrock_model_id
+      OUTPUT_SQS_URL    = aws_sqs_queue.classified_queue.url
+      REGION            = var.aws_region
     }
   }
 }

@@ -159,10 +159,25 @@ resource "aws_iam_policy" "classifier_lambda_policy" {
       {
         Effect = "Allow",
         Action = [
+          "sqs:SendMessage"
+        ],
+        Resource = aws_sqs_queue.classified_queue.arn
+      },
+      {
+        Effect = "Allow",
+        Action = [
           "dynamodb:GetItem"
         ],
         Resource = aws_dynamodb_table.users.arn
       },
+      {
+        Sid    = "AllowInvokeBedrockModel",
+        Effect = "Allow",
+        Action = [
+          "bedrock:InvokeModel"
+        ],
+        Resource = "arn:aws:bedrock:us-east-1::foundation-model/${local.bedrock_model_id}"
+      }
     ]
   })
 }

@@ -104,7 +104,7 @@ def lambda_handler(event, context):
             logger.info("Wrote cleaned email to %s", s3_path)
 
             # Insert metadata into user_emails table
-            now = datetime.utcnow().isoformat(timespec="milliseconds")
+            now = datetime.now(datetime.timezone.utc).isoformat(timespec="milliseconds")
             user_emails_table.put_item(
                 Item={
                     "user_email": to_email,
