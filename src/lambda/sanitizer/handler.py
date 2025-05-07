@@ -25,11 +25,13 @@ USER_EMAILS_TABLE = os.environ["USER_EMAILS_TABLE"]
 # DynamoDB table object
 user_emails_table = dynamodb.Table(USER_EMAILS_TABLE)
 
+
 def clean_text(text: str) -> str:
     """Strip HTML tags and normalize whitespace in email content."""
     soup = BeautifulSoup(text, "html.parser")
     cleaned = soup.get_text(separator=" ", strip=True)
-    return re.sub(r'\s+', ' ', cleaned).strip()
+    return re.sub(r"\s+", " ", cleaned).strip()
+
 
 def decode_mime_words(s: str) -> str:
     """Decode MIME-encoded email subject strings."""
@@ -37,6 +39,7 @@ def decode_mime_words(s: str) -> str:
         return str(make_header(decode_header(s)))
     except Exception:
         return s
+
 
 def extract_body(msg):
     """Extract plain text or fallback to cleaned HTML."""
@@ -48,6 +51,7 @@ def extract_body(msg):
             return clean_text(part.get_content())
     return ""
 
+
 def lambda_handler(event, context):
     logger.info("Processing %d records", len(event["Records"]))
 
@@ -55,7 +59,9 @@ def lambda_handler(event, context):
         try:
             # Parse the outer SQS message body
             sqs_body = json.loads(record["body"])
-            s3_event = json.loads(sqs_body["Message"]) if "Message" in sqs_body else sqs_body
+            s3_event = (
+                json.loads(sqs_body["Message"]) if "Message" in sqs_body else sqs_body
+            )
 
             # Get bucket and key from the inner S3 event
             s3_info = s3_event["Records"][0]["s3"]
@@ -71,6 +77,7 @@ def lambda_handler(event, context):
             # Parse the email
             msg = BytesParser(policy=policy.default).parsebytes(raw_email)
             from_name, from_email = parseaddr(msg.get("From", "unknown"))
+            to_email = msg.get("To", "unknown")
             subject = decode_mime_words(msg.get("Subject", ""))
             body_text = extract_body(msg)
 
@@ -78,9 +85,10 @@ def lambda_handler(event, context):
             base_key = os.path.basename(key).split(".")[0]
             output_key = f"{base_key}.json"
             s3_path = f"s3://{OUTPUT_S3_BUCKET}/{output_key}"
-            
+
             email_json = {
                 "from": from_email,
+                "to": to_email,
                 "display_name": from_name,
                 "subject": subject,
                 "body": body_text,
@@ -90,7 +98,7 @@ def lambda_handler(event, context):
                 Bucket=OUTPUT_S3_BUCKET,
                 Key=output_key,
                 Body=json.dumps(email_json, indent=2),
-                ContentType="application/json"
+                ContentType="application/json",
             )
 
             logger.info("Wrote cleaned email to %s", s3_path)
@@ -99,11 +107,12 @@ def lambda_handler(event, context):
             now = datetime.utcnow().isoformat(timespec="milliseconds")
             user_emails_table.put_item(
                 Item={
-                    "user_email": from_email,
+                    "user_email": to_email,
+                    "from_email": from_email,
                     "display_name": from_name,
                     "timestamp": now,
                     "s3_path": s3_path,
-                    "subject": subject
+                    "subject": subject,
                 }
             )
 

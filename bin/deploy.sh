@@ -80,6 +80,7 @@ package_lambda() {
 
 # Add more lambdas here as needed
 package_lambda "src/lambda/sanitizer"
+package_lambda "src/lambda/classifier"
 
 echo "Deploying with Terraform..."
 
