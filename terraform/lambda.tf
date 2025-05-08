@@ -74,3 +74,24 @@ resource "aws_lambda_event_source_mapping" "sqs_trigger_notifier" {
   batch_size       = 10
   enabled          = true
 }
+
+resource "aws_lambda_function" "needl_email_webhook" {
+  function_name    = "needl-email-webhook"
+  filename         = "${path.module}/../build/webhook.zip"
+  role             = aws_iam_role.needl_email_lambda_webhook_exec_role.arn
+  handler          = "handler.lambda_handler"
+  runtime          = "python3.12"
+  source_code_hash = filebase64sha256("${path.module}/../build/webhook.zip")
+  timeout          = 60
+
+  environment {
+    variables = {
+      OUTPUT_SQS_URL = aws_sqs_queue.webhook_queue.url
+    }
+  }
+}
+
+resource "aws_lambda_function_url" "my_lambda_url" {
+  function_name      = aws_lambda_function.needl_email_webhook.function_name
+  authorization_type = "NONE"
+}
