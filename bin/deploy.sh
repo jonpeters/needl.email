@@ -97,11 +97,10 @@ package_lambda() {
     echo "✅ Done: build/${lambda_name}.zip"
 }
 
-
-# Add more lambdas here as needed
-package_lambda "src/lambda/sanitizer"
-package_lambda "src/lambda/classifier"
-package_lambda "src/lambda/notifier"
+# Automatically find and package all lambdas in src/lambda/
+for lambda_dir in src/lambda/*; do
+    [ -d "$lambda_dir" ] && package_lambda "$lambda_dir"
+done
 
 echo "Deploying with Terraform..."
 
