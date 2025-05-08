@@ -45,26 +45,42 @@ fi
 
 echo "Packaging Lambdas..."
 
-rm -rf build
-mkdir -p build
-
 # Docker-based packaging
 package_lambda() {
     local lambda_folder=$1
     local lambda_name="${lambda_folder##*/}"
+    local zip_path="build/${lambda_name}.zip"
+    local hash_file="${lambda_folder}/.last_build_hash"
 
-    echo "Packaging $lambda_name..."
+    echo "Checking $lambda_name for changes..."
 
-    # Copy the lambda's requirements.txt into bin/ as temp input for Dockerfile
+    # Compute hash of source files
+    local current_hash
+    current_hash=$(find "$lambda_folder" -type f \( -name "*.py" -o -name "requirements.txt" \) -exec sha256sum {} \; | sha256sum | awk '{print $1}')
+
+    if [ -f "$hash_file" ] && [[ "$current_hash" == "$(cat "$hash_file")" ]]; then
+        echo "⏩ No changes in $lambda_name, skipping packaging."
+        return
+    fi
+
+    echo "📦 Packaging $lambda_name..."
+
+    # Delete previous zip if rebuilding
+    if [ -f "$zip_path" ]; then
+        echo "🧹 Removing old zip: $zip_path"
+        rm "$zip_path"
+    fi
+
+    # Copy requirements.txt into Docker context
     cp "${lambda_folder}/requirements.txt" bin/requirements.txt
 
-    # Build the image using bin/ as context
+    # Build Docker image
     docker build \
         -t "lambda-package-${lambda_name}" \
         -f bin/Dockerfile \
         bin
 
-    # Run the built image to zip the contents
+    # Run container to zip the Lambda
     docker run --rm \
         -v "$(pwd)/build":/build \
         -v "$(realpath ${lambda_folder})":/src \
@@ -72,11 +88,15 @@ package_lambda() {
         "lambda-package-${lambda_name}" \
         bash -c "cp /src/*.py . && zip -r /build/${lambda_name}.zip . > /dev/null"
 
-    # Clean up temp copied requirements.txt
+    # Save hash for future comparisons
+    echo "$current_hash" > "$hash_file"
+
+    # Clean up Docker context
     rm bin/requirements.txt
 
-    echo "✓ Done: build/${lambda_name}.zip"
+    echo "✅ Done: build/${lambda_name}.zip"
 }
+
 
 # Add more lambdas here as needed
 package_lambda "src/lambda/sanitizer"

@@ -175,3 +175,4 @@ cython_debug/
 
 terraform.lock.hcl
 src/lambda/*/package/
+.last_build_hash
