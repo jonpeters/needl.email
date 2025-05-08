@@ -186,3 +186,56 @@ resource "aws_iam_role_policy_attachment" "lambda_classifier_attachment" {
   role       = aws_iam_role.needl_email_lambda_classifier_exec_role.name
   policy_arn = aws_iam_policy.classifier_lambda_policy.arn
 }
+
+resource "aws_iam_role" "needl_email_lambda_notifier_exec_role" {
+  name = "needl-email-lambda-notifier-role"
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17",
+    Statement = [{
+      Action = "sts:AssumeRole",
+      Effect = "Allow",
+      Principal = {
+        Service = "lambda.amazonaws.com"
+      }
+    }]
+  })
+}
+
+resource "aws_iam_policy" "notifier_lambda_policy" {
+  name = "lambda-notifier-policy"
+  policy = jsonencode({
+    Version = "2012-10-17",
+    Statement = [
+      {
+        Effect = "Allow",
+        Action = [
+          "logs:CreateLogGroup",
+          "logs:CreateLogStream",
+          "logs:PutLogEvents"
+        ],
+        Resource = "*"
+      },
+      {
+        Effect = "Allow",
+        Action = [
+          "sqs:ReceiveMessage",
+          "sqs:DeleteMessage",
+          "sqs:GetQueueAttributes"
+        ],
+        Resource = aws_sqs_queue.classified_queue.arn
+      },
+      {
+        Effect = "Allow",
+        Action = [
+          "dynamodb:GetItem"
+        ],
+        Resource = aws_dynamodb_table.users.arn
+      }
+    ]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "lambda_notifier_attachment" {
+  role       = aws_iam_role.needl_email_lambda_notifier_exec_role.name
+  policy_arn = aws_iam_policy.notifier_lambda_policy.arn
+}
