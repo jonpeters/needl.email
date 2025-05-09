@@ -91,7 +91,24 @@ resource "aws_lambda_function" "needl_email_webhook" {
   }
 }
 
-resource "aws_lambda_function_url" "my_lambda_url" {
+resource "aws_lambda_function_url" "needl_email_webhook_url" {
   function_name      = aws_lambda_function.needl_email_webhook.function_name
   authorization_type = "NONE"
+}
+
+resource "aws_lambda_function" "needl_email_chat" {
+  function_name    = "needl-email-chat"
+  filename         = "${path.module}/../build/chat.zip"
+  role             = aws_iam_role.needl_email_lambda_chat_exec_role.arn
+  handler          = "handler.lambda_handler"
+  runtime          = "python3.12"
+  source_code_hash = filebase64sha256("${path.module}/../build/chat.zip")
+  timeout          = 60
+}
+
+resource "aws_lambda_event_source_mapping" "sqs_trigger_chat" {
+  event_source_arn = aws_sqs_queue.webhook_queue.arn
+  function_name    = aws_lambda_function.needl_email_chat.arn
+  batch_size       = 10
+  enabled          = true
 }

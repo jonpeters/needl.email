@@ -11,7 +11,7 @@ resource "aws_dynamodb_table" "users" {
   tags = {
     Name        = "users"
     Environment = "prod"
-    App         = "needl"
+    App         = var.app_name
   }
 }
 
@@ -34,6 +34,23 @@ resource "aws_dynamodb_table" "user_emails" {
   tags = {
     Name        = "user_emails"
     Environment = "prod"
-    App         = "needl"
+    App         = var.app_name
+  }
+}
+
+resource "aws_dynamodb_table" "pending_links" {
+  name         = "pending_links"
+  billing_mode = "PAY_PER_REQUEST"
+  hash_key     = "link_code"
+
+  attribute {
+    name = "link_code"
+    type = "S"
+  }
+
+  tags = {
+    Name        = "pending_links"
+    Environment = "prod"
+    App         = var.app_name
   }
 }
