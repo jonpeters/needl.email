@@ -57,24 +57,26 @@
 ```mermaid
 flowchart TD
 
-SES[SES] --> S3Inbox[S3<br/><i>Raw</i>]
-S3Inbox --> SQSInbox[[SQS]]
+Gmail[Gmail] -.forward.-> SES
+SES[SES] --> S3Inbox[[S3<br/><i>Raw</i>]]
+S3Inbox --> SQSInbox([SQS])
 SQSInbox --> LambdaSanitizer[Lambda<br/><i>Sanitizer</i>]
 
-LambdaSanitizer --> S3Sanitized[S3<br/><i>Sanitized</i>]
+LambdaSanitizer --> S3Sanitized[[S3<br/><i>Sanitized</i>]]
 LambdaSanitizer -->|write user_emails| Dynamo[(DynamoDB)]
 
-S3Sanitized --> SQSSanitized[[SQS]]
+S3Sanitized --> SQSSanitized([SQS])
 SQSSanitized --> LambdaClassifier[Lambda<br/><i>Classifier</i>]
 LambdaClassifier -->|read users| Dynamo
 LambdaClassifier --> Bedrock[Bedrock]
-LambdaClassifier --> SQSClassified[[SQS]]
+LambdaClassifier --> SQSClassified([SQS])
 
 SQSClassified --> LambdaNotifier[Lambda<br/><i>Notifier</i>]
 LambdaNotifier -->|read users.telegram_id| Dynamo
-LambdaNotifier --> Telegram[Telegram Bot]
+LambdaNotifier -.-> Telegram[Telegram Bot]
 
-Telegram -->|ingest| LambdaWebhook[Lambda<br/><i>Webhook</i>]
-LambdaWebhook --> SQSWebhook[[SQS]]
+Telegram -.->|ingest user messages| LambdaWebhook[Lambda<br/><i>Webhook</i>]
+LambdaWebhook --> SQSWebhook([SQS])
 SQSWebhook --> LambdaChat[Lambda<br/><i>Chat</i>]
 LambdaChat -->|read pending_links + write users| Dynamo
+```
