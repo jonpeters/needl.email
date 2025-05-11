@@ -1,6 +1,6 @@
 # needl.email
 
-## Setup (Manual — not in Terraform)
+## AWS Setup (Manual — not in Terraform)
 
 > ⚠️ These setup steps are performed manually in the AWS Console. Terraform does not currently configure SES receiving rules.
 
@@ -51,6 +51,14 @@
 - Send an email to your domain (e.g., `test@yourdomain.com`)
 - Confirm the email appears in the S3 bucket 
 
+## Webhook Setup
+
+To enable Telegram to send messages to your webhook Lambda, you must register your Lambda URL with Telegram's `setWebhook` API. 
+
+```bash
+curl -X POST "https://api.telegram.org/bot<YOUR_BOT_ID>/setWebhook" -d "url=<YOUR_FUNCTION_URL>"
+```
+
 
 ## Architecture
 
@@ -66,17 +74,24 @@ LambdaSanitizer --> S3Sanitized[[S3<br/><i>Sanitized</i>]]
 LambdaSanitizer -->|write user_emails| Dynamo[(DynamoDB)]
 
 S3Sanitized --> SQSSanitized([SQS])
-SQSSanitized --> LambdaClassifier[Lambda<br/><i>Classifier</i>]
+SQSSanitized --> LambdaClassifier[Lambda<br/><i>Email Classifier</i>]
 LambdaClassifier -->|read users| Dynamo
 LambdaClassifier --> Bedrock[Bedrock]
 LambdaClassifier --> SQSClassified([SQS])
+LambdaClassifier --> SQSGmailAllow([SQS])
 
-SQSClassified --> LambdaNotifier[Lambda<br/><i>Notifier</i>]
+SQSGmailAllow --> LambdaGmailAllow[Lambda<br/><i>Gmail Allow Forward</i>]
+LambdaGmailAllow -.-> Gmail
+
+SQSClassified --> LambdaChat[Lambda<br/><i>Chat Agent</i>]
 LambdaNotifier -->|read users.telegram_id| Dynamo
 LambdaNotifier -.-> Telegram[Telegram Bot]
 
 Telegram -.->|ingest user messages| LambdaWebhook[Lambda<br/><i>Webhook</i>]
-LambdaWebhook --> SQSWebhook([SQS])
-SQSWebhook --> LambdaChat[Lambda<br/><i>Chat</i>]
-LambdaChat -->|read pending_links + write users| Dynamo
+LambdaWebhook -->|write link record| Dynamo
+LambdaWebhook --> SQSClassified
+LambdaChat -->|get bot response| Bedrock
+LambdaChat -->|write chat history| Dynamo
+LambdaChat --> SQSChat([SQS])
+SQSChat --> LambdaNotifier[Lambda<br/><i>Notifier</i>]
 ```

@@ -54,3 +54,20 @@ resource "aws_dynamodb_table" "pending_links" {
     App         = var.app_name
   }
 }
+
+resource "aws_dynamodb_table" "telegram" {
+  name         = "telegram"
+  billing_mode = "PAY_PER_REQUEST"
+  hash_key     = "telegram_id"
+
+  attribute {
+    name = "telegram_id"
+    type = "S"
+  }
+
+  tags = {
+    Name        = "telegram_id"
+    Environment = "prod"
+    App         = var.app_name
+  }
+}

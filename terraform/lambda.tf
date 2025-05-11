@@ -35,10 +35,9 @@ resource "aws_lambda_function" "needl_email_classifier" {
 
   environment {
     variables = {
-      OUTPUT_S3_BUCKET  = aws_s3_bucket.s3_bucket_sanitized.bucket
       USER_EMAILS_TABLE = aws_dynamodb_table.user_emails.name
       BEDROCK_MODEL_ID  = local.bedrock_model_id
-      OUTPUT_SQS_URL    = aws_sqs_queue.classified_queue.url
+      OUTPUT_SQS_URL    = aws_sqs_queue.chat_queue.url
       REGION            = var.aws_region
     }
   }
@@ -69,7 +68,7 @@ resource "aws_lambda_function" "needl_email_notifier" {
 }
 
 resource "aws_lambda_event_source_mapping" "sqs_trigger_notifier" {
-  event_source_arn = aws_sqs_queue.classified_queue.arn
+  event_source_arn = aws_sqs_queue.notify_queue.arn
   function_name    = aws_lambda_function.needl_email_notifier.arn
   batch_size       = 10
   enabled          = true
@@ -86,7 +85,7 @@ resource "aws_lambda_function" "needl_email_webhook" {
 
   environment {
     variables = {
-      OUTPUT_SQS_URL = aws_sqs_queue.webhook_queue.url
+      OUTPUT_SQS_URL = aws_sqs_queue.chat_queue.url
     }
   }
 }
@@ -104,10 +103,16 @@ resource "aws_lambda_function" "needl_email_chat" {
   runtime          = "python3.12"
   source_code_hash = filebase64sha256("${path.module}/../build/chat.zip")
   timeout          = 60
+
+  environment {
+    variables = {
+      OUTPUT_SQS_URL = aws_sqs_queue.notify_queue.url
+    }
+  }
 }
 
 resource "aws_lambda_event_source_mapping" "sqs_trigger_chat" {
-  event_source_arn = aws_sqs_queue.webhook_queue.arn
+  event_source_arn = aws_sqs_queue.chat_queue.arn
   function_name    = aws_lambda_function.needl_email_chat.arn
   batch_size       = 10
   enabled          = true

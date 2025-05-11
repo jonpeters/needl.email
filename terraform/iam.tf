@@ -161,7 +161,7 @@ resource "aws_iam_policy" "classifier_lambda_policy" {
         Action = [
           "sqs:SendMessage"
         ],
-        Resource = aws_sqs_queue.classified_queue.arn
+        Resource = aws_sqs_queue.chat_queue.arn
       },
       {
         Effect = "Allow",
@@ -222,7 +222,7 @@ resource "aws_iam_policy" "notifier_lambda_policy" {
           "sqs:DeleteMessage",
           "sqs:GetQueueAttributes"
         ],
-        Resource = aws_sqs_queue.classified_queue.arn
+        Resource = aws_sqs_queue.notify_queue.arn
       },
       {
         Effect = "Allow",
@@ -273,7 +273,31 @@ resource "aws_iam_policy" "webhook_lambda_policy" {
         Action = [
           "sqs:SendMessage"
         ],
-        Resource = aws_sqs_queue.webhook_queue.arn
+        Resource = aws_sqs_queue.chat_queue.arn
+      },
+      {
+        Effect = "Allow",
+        Action = [
+          "dynamodb:GetItem",
+          "dynamodb:DeleteItem"
+        ],
+        Resource = aws_dynamodb_table.pending_links.arn
+      },
+      {
+        Effect = "Allow",
+        Action = [
+          "dynamodb:GetItem",
+          "dynamodb:UpdateItem"
+        ],
+        Resource = aws_dynamodb_table.users.arn
+      },
+      {
+        Effect = "Allow",
+        Action = [
+          "dynamodb:GetItem",
+          "dynamodb:PutItem"
+        ],
+        Resource = aws_dynamodb_table.telegram.arn
       }
     ]
   })
@@ -319,7 +343,14 @@ resource "aws_iam_policy" "chat_lambda_policy" {
           "sqs:DeleteMessage",
           "sqs:GetQueueAttributes"
         ],
-        Resource = aws_sqs_queue.webhook_queue.arn
+        Resource = aws_sqs_queue.chat_queue.arn
+      },
+       {
+        Effect = "Allow",
+        Action = [
+          "sqs:SendMessage"
+        ],
+        Resource = aws_sqs_queue.notify_queue.arn
       },
       {
         Effect = "Allow",
@@ -328,14 +359,6 @@ resource "aws_iam_policy" "chat_lambda_policy" {
           "dynamodb:UpdateItem"
         ],
         Resource = aws_dynamodb_table.users.arn
-      },
-      {
-        Effect = "Allow",
-        Action = [
-          "dynamodb:GetItem",
-          "dynamodb:DeleteItem"
-        ],
-        Resource = aws_dynamodb_table.pending_links.arn
       }
     ]
   })

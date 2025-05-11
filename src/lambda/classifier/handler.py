@@ -5,11 +5,17 @@ import urllib.parse
 import os
 import re
 
-# Constants
+# Logger
+logger = logging.getLogger()
+logger.setLevel(logging.INFO)
+
+# Environment variables
 USERS_TABLE = os.environ.get("USERS_TABLE", "users")
 MODEL_ID = os.environ.get("BEDROCK_MODEL_ID")
 SQS_QUEUE_URL = os.environ["OUTPUT_SQS_URL"]
 REGION = os.environ["REGION"]
+
+# Constants
 MAX_PROMPT_TOKENS = 4000
 MAX_TOKENS = 512
 
@@ -19,35 +25,34 @@ dynamodb = boto3.resource("dynamodb")
 bedrock = boto3.client("bedrock-runtime", region_name=REGION)
 sqs = boto3.client("sqs")
 
-
-# Logger
-logger = logging.getLogger()
-logger.setLevel(logging.INFO)
-
-# DynamoDB Table
 users_table = dynamodb.Table(USERS_TABLE)
 
 PROMPT_TEMPLATE = """
-You are an AI assistant that helps users decide whether they need to check an email right away. Your job is to explain whether the email is worth their immediate attention.
-
-Mark emails as worth reading if they are:
-
-- Personal and conversational (e.g. from a friend or someone they know)
-- Urgent or time-sensitive (e.g. school closures, security alerts, weather issues)
-- Actionable (e.g. needs a reply, contains a decision or next step)
-- Highly relevant (e.g. from family, recruiters, or about their kids)
-
-Suppress emails that are:
-
-- Routine (e.g. receipts, shipping, statements)
-- Promotional or commercial (ads, sales)
-- Automated or low-signal (newsletters, onboarding, notifications)
+You are an AI assistant that helps users decide whether they need to check an email right away. Your job is to classify emails to determine if they require immediate attention.
 
 Respond only with a JSON object in this format:
+{
+  "worth_reading": true | false,
+  "gmail_forward_confirm_link": "<confirmation URL or null>",
+  "reason": "Natural, human-sounding explanation — friendly and short, as if texting the user. Start with 'You received an email that...' or something similar."
+}
 
-{"worth_reading": true | false, "reason": "Natural, human-sounding explanation — friendly and short, as if texting the user. Start with 'You received an email that...' or something similar."}
+Classify emails as follows:
 
-Do not include anything outside the JSON.
+- worth_reading is true if emails are:
+  - Personal/conversational (friends, acquaintances)
+  - Urgent/time-sensitive (alerts, closures, issues)
+  - Actionable (requires reply or action)
+  - Highly relevant (family, recruiters, children's activities)
+
+- worth_reading is false if emails are:
+  - Routine (receipts, statements, shipping updates)
+  - Promotional/commercial (advertisements, sales)
+  - Automated/low-value (newsletters, notifications)
+
+Additionally:
+- If the email is specifically a Gmail forwarding confirmation request (contains phrases like "requested to automatically forward mail") **and** the sender's email address is clearly from an official Google domain (e.g., ending with "@gmail.com" or "@google.com"), set gmail_forward_confirm_link to the exact confirmation URL provided in the email body.
+- Otherwise, set gmail_forward_confirm_link to null.
 
 Subject: {subject}
 From: {from}
@@ -55,119 +60,114 @@ Body: {body}
 """
 
 
-def get_s3_record(record: dict) -> tuple[str, str]:
-    """Extract the S3 bucket and key from an SQS-wrapped S3 event."""
+def get_s3_record(record):
+    """Extract the bucket and key from an SQS-triggered S3 event."""
     body = json.loads(record["body"])
     s3_event = (
         json.loads(body["Records"][0]) if isinstance(body["Records"][0], str) else body
     )
     s3_info = s3_event["Records"][0]["s3"]
-
     bucket = s3_info["bucket"]["name"]
     key = urllib.parse.unquote_plus(s3_info["object"]["key"])
     return bucket, key
 
 
-def read_json_from_s3(bucket: str, key: str) -> dict:
-    """Fetch and parse a JSON file from S3."""
+def read_json_from_s3(bucket, key):
+    """Fetch and parse JSON content from an S3 object."""
     logger.info(f"Reading file from s3://{bucket}/{key}")
     response = s3.get_object(Bucket=bucket, Key=key)
     return json.loads(response["Body"].read().decode("utf-8"))
 
 
-def lookup_user(email: str) -> dict | None:
-    """Retrieve a user record from DynamoDB by email."""
+def lookup_user(email):
+    """Retrieve user information from DynamoDB by email."""
     response = users_table.get_item(Key={"email": email})
     return response.get("Item")
 
 
-def trim_token_length(text: str, max_tokens: int = MAX_PROMPT_TOKENS) -> str:
-    """Truncate text to roughly fit within a token budget (based on ~4 characters/token)."""
-    max_length = max_tokens * 4  # Approximate 4 chars/token
-    return text[:max_length]
+def trim_token_length(text, max_tokens=MAX_PROMPT_TOKENS):
+    """Trim text to fit approximately within token limits."""
+    return text[: max_tokens * 4]  # Roughly 4 characters per token
 
 
-def safe_json_parse(text: str) -> dict:
-    """Attempt to parse JSON from LLM output, fallback to regex fix if needed."""
+def safe_json_parse(text):
+    """Attempt to safely parse JSON, with fallback handling."""
     try:
         return json.loads(text)
     except json.JSONDecodeError:
         match = re.search(r"\{[^}]*:.*?\}", text, re.DOTALL)
         if match:
-            json_str = re.sub(
-                r"(\"reason\"\s*:\s*)([^\"].*?)([\}\n])", r'\1"\2"\3', match.group(0)
+            fixed_json = re.sub(
+                r"(\"reason\"\s*:\s*)([^\"].*?)([}\n])", r'\1"\2"\3', match.group(0)
             )
-            return json.loads(json_str)
-        raise ValueError("Could not extract valid JSON from model response")
+            return json.loads(fixed_json)
+        raise ValueError("Could not extract valid JSON")
+
+
+def classify_email(email_data):
+    """Classify email content using an AI model."""
+    from_email = email_data.get("from", "").strip().lower()
+    subject = email_data.get("subject", "").strip()
+    body = email_data.get("body", "").strip()
+
+    prompt = trim_token_length(
+        PROMPT_TEMPLATE.replace("{from}", from_email)
+        .replace("{subject}", subject)
+        .replace("{body}", body)
+    )
+
+    bedrock_payload = {
+        "anthropic_version": "bedrock-2023-05-31",
+        "max_tokens": MAX_TOKENS,
+        "temperature": 0,
+        "messages": [{"role": "user", "content": prompt}],
+    }
+
+    response = bedrock.invoke_model(
+        modelId=MODEL_ID,
+        contentType="application/json",
+        accept="application/json",
+        body=json.dumps(bedrock_payload),
+    )
+
+    result = json.loads(response["body"].read())
+    parsed = safe_json_parse(result["content"][0]["text"].strip())
+    return parsed, subject
 
 
 def lambda_handler(event, context):
+    """Lambda handler to classify emails and forward important ones."""
     logger.info("Received event: %s", json.dumps(event))
 
     for record in event.get("Records", []):
         try:
-            logger.debug("Raw record: %s", record)
-
-            # read the s3 object specified in the incoming record
             bucket, key = get_s3_record(record)
             email_data = read_json_from_s3(bucket, key)
 
-            # sanity check; all received emails should always have a "to" address
+            # Sanity check; all received emails should always have a "to" address
             user_email = email_data.get("to", "").strip().lower()
             if not user_email:
                 logger.warning("Missing 'to' email in %s", key)
                 continue
 
-            # check if there is a record in the "users" table for the "to" address
+            # Check if there is a record in the "users" table for the "to" address
             user = lookup_user(user_email)
-            if not user:
-                logger.info("No user found for %s, skipping.", user_email)
 
-                # if there is not, no need to classify the email as there is no one to notify
+            # Don't bother classifying if there is no user record
+            if not user:
+                logger.info("No user found for %s", user_email)
                 continue
 
-            logger.info("Found user: %s", json.dumps(user))
+            # Classify
+            parsed_result, subject = classify_email(email_data)
 
-            # extract additional data from s3 object
-            from_email = email_data.get("from", "").strip().lower()
-            subject = user_email = email_data.get("subject", "").strip().lower()
-            body = user_email = email_data.get("body", "").strip().lower()
-
-            # init the prompt
-            prompt = trim_token_length(
-                PROMPT_TEMPLATE.replace("{from}", from_email)
-                .replace("{subject}", subject)
-                .replace("{body}", body)
-            )
-
-            bedrock_payload = {
-                "anthropic_version": "bedrock-2023-05-31",
-                "max_tokens": MAX_TOKENS,
-                "temperature": 0,
-                "messages": [{"role": "user", "content": prompt}],
-            }
-
-            # call bedrock
-            response = bedrock.invoke_model(
-                modelId=MODEL_ID,
-                contentType="application/json",
-                accept="application/json",
-                body=json.dumps(bedrock_payload),
-            )
-
-            result = json.loads(response["body"].read())
-            logger.info("Inference result: " + str(result))
-
-            raw_text = result["content"][0].get("text", "").strip()
-            parsed = safe_json_parse(raw_text)
-
-            logger.info("Parsed classification: " + str(parsed))
-
-            # if classified positively, push it to sqs
-            if parsed.get("worth_reading"):
-                email_data["classification"] = parsed["reason"]
+            # Send positive classifications to SQS; no-op otherwise
+            if parsed_result.get("worth_reading"):
+                reason = parsed_result["reason"]
+                text = f"{subject}\n\n{reason}"
                 sqs.send_message(
-                    QueueUrl=SQS_QUEUE_URL, MessageBody=json.dumps(email_data)
+                    QueueUrl=SQS_QUEUE_URL,
+                    MessageBody=json.dumps({"user_email": user_email, "text": text}),
                 )
 
         except Exception:

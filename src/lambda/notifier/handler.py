@@ -43,33 +43,32 @@ def lambda_handler(event, context):
             message = json.loads(record["body"])
 
             # Extract recipient email
-            to_email = message.get("to", "").strip().lower()
-            if not to_email:
-                logger.warning("No 'to' address found in message.")
+            user_email = message.get("user_email", "").strip().lower()
+            if not user_email:
+                logger.warning("No 'user_email' address found in message.")
                 continue
 
             # Lookup user in DynamoDB
-            user = lookup_user(to_email)
+            user = lookup_user(user_email)
             if not user:
-                logger.info(f"No user found for email: {to_email}")
+                logger.info(f"No user found for email: {user_email}")
                 continue
 
             telegram_id = user.get("telegram_id")
             if not telegram_id:
-                logger.warning(f"User {to_email} does not have a telegram_id.")
+                logger.warning(f"User {user_email} does not have a telegram_id.")
                 continue
 
-            classification = message.get("classification", "")
-            if not classification:
-                logger.warning("No classification found in message.")
+            text = message.get("text", "")
+            if not text:
+                logger.warning("No text found in message.")
                 continue
-            
-            message = f"{message.get("subject", "")}\n\n{classification}"
 
-            logger.info(f"Sending Telegram message to {telegram_id}: {classification}")
+            logger.info(f"Sending Telegram message to {telegram_id}: {text}")
             send_resp = send_telegram_notification(
-                TELEGRAM_BOT_ID, telegram_id, classification
+                TELEGRAM_BOT_ID, telegram_id, text
             )
+            
             logger.info("Telegram response: %s", send_resp)
 
         except Exception as e:

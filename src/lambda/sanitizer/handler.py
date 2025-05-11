@@ -8,7 +8,7 @@ from email import policy
 from email.parser import BytesParser
 from email.header import decode_header, make_header
 from email.utils import parseaddr
-from datetime import datetime
+from datetime import datetime, timezone
 
 # Set up logger
 logger = logging.getLogger()
@@ -104,7 +104,7 @@ def lambda_handler(event, context):
             logger.info("Wrote cleaned email to %s", s3_path)
 
             # Insert metadata into user_emails table
-            now = datetime.now(datetime.timezone.utc).isoformat(timespec="milliseconds")
+            now = datetime.now(timezone.utc).isoformat(timespec="milliseconds")
             user_emails_table.put_item(
                 Item={
                     "user_email": to_email,
