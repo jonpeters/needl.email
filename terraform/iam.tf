@@ -89,18 +89,19 @@ resource "aws_iam_role_policy_attachment" "lambda_attach" {
   policy_arn = aws_iam_policy.lambda_policy.arn
 }
 
-# allow sanitized s3 bucket to publish to sqs
-resource "aws_sqs_queue_policy" "allow_s3_sanitized_publish" {
-  queue_url = aws_sqs_queue.sanitized_queue.id
+# allow sanitized s3 bucket to publish to SNS
+resource "aws_sns_topic_policy" "allow_sanitized_s3_publish" {
+  arn = aws_sns_topic.email_events.arn
 
   policy = jsonencode({
     Version = "2012-10-17",
     Statement = [
       {
+        Sid       = "AllowSanitizedS3ToPublish",
         Effect    = "Allow",
         Principal = { Service = "s3.amazonaws.com" },
-        Action    = "sqs:SendMessage",
-        Resource  = aws_sqs_queue.sanitized_queue.arn,
+        Action    = "sns:Publish",
+        Resource  = aws_sns_topic.email_events.arn,
         Condition = {
           ArnLike = {
             "aws:SourceArn" = aws_s3_bucket.s3_bucket_sanitized.arn
@@ -110,6 +111,31 @@ resource "aws_sqs_queue_policy" "allow_s3_sanitized_publish" {
     ]
   })
 }
+
+# allow SNS to publish to SQS
+resource "aws_sqs_queue_policy" "allow_sns_to_sanitized_queue" {
+  queue_url = aws_sqs_queue.sanitized_queue.id
+
+  policy = jsonencode({
+    Version = "2012-10-17",
+    Statement = [
+      {
+        Sid       = "AllowSNSPublish",
+        Effect    = "Allow",
+        Principal = "*",
+        Action    = "sqs:SendMessage",
+        Resource  = aws_sqs_queue.sanitized_queue.arn,
+        Condition = {
+          ArnEquals = {
+            "aws:SourceArn" = aws_sns_topic.email_events.arn
+          }
+        }
+      }
+    ]
+  })
+}
+
+
 
 # trust policy for classifier lambda
 resource "aws_iam_role" "needl_email_lambda_classifier_exec_role" {

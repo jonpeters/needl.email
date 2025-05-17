@@ -73,7 +73,8 @@ SQSInbox --> LambdaSanitizer[Lambda<br/><i>Sanitizer</i>]
 LambdaSanitizer --> S3Sanitized[[S3<br/><i>Sanitized</i>]]
 LambdaSanitizer -->|write user_emails| Dynamo[(DynamoDB)]
 
-S3Sanitized --> SQSSanitized([SQS])
+S3Sanitized --> SNSSanitized([SNS])
+SNSSanitized --> SQSSanitized([SQS])
 SQSSanitized --> LambdaClassifier[Lambda<br/><i>Email Classifier</i>]
 LambdaClassifier -->|read users| Dynamo
 LambdaClassifier --> Bedrock[Bedrock]
