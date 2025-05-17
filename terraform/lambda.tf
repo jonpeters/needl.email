@@ -35,10 +35,11 @@ resource "aws_lambda_function" "needl_email_classifier" {
 
   environment {
     variables = {
-      USER_EMAILS_TABLE = aws_dynamodb_table.user_emails.name
-      BEDROCK_MODEL_ID  = local.bedrock_model_id
-      OUTPUT_SQS_URL    = aws_sqs_queue.chat_queue.url
-      REGION            = var.aws_region
+      USER_EMAILS_TABLE    = aws_dynamodb_table.user_emails.name
+      BEDROCK_MODEL_ID     = local.bedrock_model_id
+      OUTPUT_SQS_URL       = aws_sqs_queue.chat_queue.url
+      OUTPUT_SQS_URL_GMAIL = aws_sqs_queue.url_visitor_queue.url
+      REGION               = var.aws_region
     }
   }
 }
@@ -114,6 +115,23 @@ resource "aws_lambda_function" "needl_email_chat" {
 resource "aws_lambda_event_source_mapping" "sqs_trigger_chat" {
   event_source_arn = aws_sqs_queue.chat_queue.arn
   function_name    = aws_lambda_function.needl_email_chat.arn
+  batch_size       = 10
+  enabled          = true
+}
+
+resource "aws_lambda_function" "needl_email_url_visitor" {
+  function_name    = "needl-email-url-visitor"
+  filename         = "${path.module}/../build/urlvisitor.zip"
+  role             = aws_iam_role.needl_email_lambda_url_visitor_exec_role.arn
+  handler          = "handler.lambda_handler"
+  runtime          = "python3.12"
+  source_code_hash = filebase64sha256("${path.module}/../build/urlvisitor.zip")
+  timeout          = 60
+}
+
+resource "aws_lambda_event_source_mapping" "sqs_trigger_url_visitor" {
+  event_source_arn = aws_sqs_queue.url_visitor_queue.arn
+  function_name    = aws_lambda_function.needl_email_url_visitor.arn
   batch_size       = 10
   enabled          = true
 }

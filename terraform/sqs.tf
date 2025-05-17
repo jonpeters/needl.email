@@ -13,8 +13,12 @@ resource "aws_sqs_queue" "chat_queue" {
   visibility_timeout_seconds = 60
 }
 
-
 resource "aws_sqs_queue" "notify_queue" {
   name                       = "${var.app_name}-notify"
+  visibility_timeout_seconds = 60
+}
+
+resource "aws_sqs_queue" "url_visitor_queue" {
+  name                       = "${var.app_name}-url-visitor"
   visibility_timeout_seconds = 60
 }

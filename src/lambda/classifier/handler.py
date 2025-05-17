@@ -13,6 +13,7 @@ logger.setLevel(logging.INFO)
 USERS_TABLE = os.environ.get("USERS_TABLE", "users")
 MODEL_ID = os.environ.get("BEDROCK_MODEL_ID")
 SQS_QUEUE_URL = os.environ["OUTPUT_SQS_URL"]
+SQS_QUEUE_URL_GMAIL = os.environ["OUTPUT_SQS_URL_GMAIL"]
 REGION = os.environ["REGION"]
 
 # Constants
@@ -28,16 +29,38 @@ sqs = boto3.client("sqs")
 users_table = dynamodb.Table(USERS_TABLE)
 
 PROMPT_TEMPLATE = """
-You are an AI assistant that helps users decide whether they need to check an email right away. Your job is to classify emails to determine if they require immediate attention.
+Your job is to classify emails. There are 2 main "types" of emails:
 
-Respond only with a JSON object in this format:
+1. From Google / Gmail asking for approval to accept forwarded emails
+2. Needs to be evaluated against criteria to determine if the content of the email is important enough to warrant immediate notification of the user
+
+The output should be JSON, in the following structure:
+
 {
   "worth_reading": true | false,
+  "email": "some.user@gmail.com",
   "gmail_forward_confirm_link": "<confirmation URL or null>",
   "reason": "Natural, human-sounding explanation — friendly and short, as if texting the user. Start with 'You received an email that...' or something similar."
 }
 
-Classify emails as follows:
+Here is an example of a Gmail forwarding confirmation email. The wording may vary slightly, but the key indicator is that it contains a Google link to confirm mail forwarding.
+
+some.user@gmail.com has requested to automatically forward mail to your email 
+address forward@needl.email.
+
+To allow some.user@gmail.com to automatically forward mail to your address, 
+please click the link below to confirm the request:
+
+https://mail-settings.google.com/mail/vf-%5BANGjdJ-EGO3oLBDGs9jEpsIHXxv-J3-LlxFwjRVmw4QtscIdaU90vyKOn1GJRpm-59zaeZpnHprqmV8ht_we%5D-gtpgtw7AH8vLXayx1LA0w5lH3sc
+
+If you click the link and it appears to be broken, please copy and paste it
+into a new browser window.
+
+Thanks for using Gmail!
+
+If you determine that the email is of this type, please extract the URL and place it in the gmail_forward_confirm_link property, and also extract the email address that the request is for and place it email property, and then return.
+
+If you determine that the email is of the second type, please classify it according to the following criteria:
 
 - worth_reading is true if emails are:
   - Personal/conversational (friends, acquaintances)
@@ -50,9 +73,7 @@ Classify emails as follows:
   - Promotional/commercial (advertisements, sales)
   - Automated/low-value (newsletters, notifications)
 
-Additionally:
-- If the email is specifically a Gmail forwarding confirmation request (contains phrases like "requested to automatically forward mail") **and** the sender's email address is clearly from an official Google domain (e.g., ending with "@gmail.com" or "@google.com"), set gmail_forward_confirm_link to the exact confirmation URL provided in the email body.
-- Otherwise, set gmail_forward_confirm_link to null.
+Here is the email:
 
 Subject: {subject}
 From: {from}
@@ -150,19 +171,26 @@ def lambda_handler(event, context):
                 logger.warning("Missing 'to' email in %s", key)
                 continue
 
+            # Classify
+            parsed_result, subject = classify_email(email_data)
+            
+            # First check if its a Gmail forward request
+            confirm_link = parsed_result.get("gmail_forward_confirm_link")
+            if confirm_link:
+                user_email = parsed_result.get("email")
+                message_body = json.dumps({"email": user_email, "url": confirm_link})
+                sqs.send_message(
+                    QueueUrl=SQS_QUEUE_URL_GMAIL,
+                    MessageBody=message_body
+                )
+                logger.info(f"Found gmail confirmation link: {message_body}")
+                return
+            
             # Check if there is a record in the "users" table for the "to" address
             user = lookup_user(user_email)
 
-            # Don't bother classifying if there is no user record
-            if not user:
-                logger.info("No user found for %s", user_email)
-                continue
-
-            # Classify
-            parsed_result, subject = classify_email(email_data)
-
             # Send positive classifications to SQS; no-op otherwise
-            if parsed_result.get("worth_reading"):
+            if user and parsed_result.get("worth_reading"):
                 reason = parsed_result["reason"]
                 text = f"{subject}\n\n{reason}"
                 sqs.send_message(
